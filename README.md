@@ -28,8 +28,8 @@ download Libs and models: [Google drive](https://drive.google.com/drive/folders/
 - CMake 3.8+
 
 <div style="display:flex;">
-    <img src="res/origin.jpg" width="300" />
-    <img src="res/bokeh.png" width="300" />
+    <img src="assets/picture/origin.jpg" width="300" />
+    <img src="assets/picture//bokeh.png" width="300" />
 </div>
 
 ### Building with Visual Studio
