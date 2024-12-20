@@ -34,8 +34,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if (WIN32)
 	# set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   /MP /wd4200")
 	# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP /wd4200")
-	set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   /MT /W3")
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MT /W3")
+	set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   /MD /W3")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MD /W3")
 else ()
 	set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -Wall -fPIC -pipe")
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -fPIC -pipe -fno-exceptions -Wno-invalid-offsetof")
@@ -88,14 +88,19 @@ SET(NCNN_LIB
 	${NCNN_PATH}/lib/MachineIndependent.lib
 	${NCNN_PATH}/lib/GenericCodeGen.lib
 )
+#OpenCL 配置
+SET(OPENCL_PATH  ${CMAKE_CURRENT_SOURCE_DIR}/lib/opencl)
+SET(OPENCL_LIB        
+	${OPENCL_PATH}/lib/OpenCL.lib
+)
 # MNN 配置
 SET(MNN_PATH  ${CMAKE_CURRENT_SOURCE_DIR}/lib/mnn)
 SET(MNN_LIB        
-	${MNN_PATH}/lib/x64/Release/Dynamic/MT/MNN.lib
+	${MNN_PATH}/lib/x64/Release/Dynamic/MD/MNN.lib
 )
 # 复制 DLL 文件到输出文件夹 ${CMAKE_CURRENT_BINARY_DIR}
 file(COPY 
-	${MNN_PATH}/lib/x64/Release/Dynamic/MT/MNN.dll
+	${MNN_PATH}/lib/x64/Release/Dynamic/MD/MNN.dll
 	DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
 )
 
@@ -130,6 +135,7 @@ include_directories(
 	"${PROTOBUF_PATH}/include/google"
 	"${NCNN_PATH}/include"
 	"${NCNN_PATH}/include/ncnn"
+	"${OPENCL_PATH}/include"
 	"${MNN_PATH}/include"
 	"${MNN_PATH}/include/cv"
 	"${CMAKE_CURRENT_SOURCE_DIR}/include/imgui"
@@ -141,6 +147,7 @@ SET(ALL_LIB_PATH
 	${VULKANSDK_LIB}
 	${PROTOBUF_LIB}
 	${NCNN_LIB}
+	${OPENCL_LIB}
 	${MNN_LIB}
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE ${ALL_LIB_PATH}  ncnn_model_static  render_static  kalman_filter_static) # openCV采用的为静态版本

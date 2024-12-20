@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <MNN/ImageProcess.hpp>
 #include <MNN/expr/Module.hpp>
@@ -32,16 +32,15 @@ namespace CS
 
     class UltraFace {
     public:
-        UltraFace(const std::string& mnn_path, int input_width, int input_length, int num_thread_ = 4, float score_threshold_ = 0.7, float iou_threshold_ = 0.3, int topk_ = -1, bool use_gpu = true);
-
+        UltraFace(const std::string& mnn_path, int num_thread_ = 4, float score_threshold_ = 0.7, float iou_threshold_ = 0.3, int topk_ = -1, bool use_gpu = true);
         ~UltraFace();
 
         cv::Rect_<float> detectLargest(cv::Mat& raw_image);
         int detectAll(cv::Mat& img, std::vector<FaceInfo>& face_list);
 
     private:
+        bool load(const std::string& mnn_path, bool use_gpu, std::vector<int>& in_shape);
         void generateBBox(std::vector<FaceInfo>& bbox_collection, MNN::Tensor* scores, MNN::Tensor* boxes);
-
         void nms(std::vector<FaceInfo>& input, std::vector<FaceInfo>& output, NMSType type = NMSType::BlendingNMS);
 
     private:
@@ -60,6 +59,7 @@ namespace CS
 
         float score_threshold;
         float iou_threshold;
+        std::vector<int> m_inputSize; // 获取模型输入尺寸
 
 
         const float mean_vals[3] = { 127.0f, 127.0f, 127.0f };

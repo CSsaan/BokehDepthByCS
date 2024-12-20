@@ -4,6 +4,7 @@
 #include <iomanip>
 #include<direct.h>
 #include <sys/stat.h>
+#include <CL/cl.h>
 
 #include "Yolov8.h"
 #include "DptV2.h"
@@ -22,7 +23,7 @@ using namespace CS;
 #include "stb_image.h"
 #endif // !STB_IMAGE_IMPLEMENTATION
 
-#define MODEL_WH  518 // 518  420
+#define MODEL_WH  420 // 518  420
 
 namespace CS
 {
@@ -107,13 +108,13 @@ namespace CS
             // -------------------- object ------------------------
             // yolov8 = make_shared<YOLOV8>();
             // depthInfer = make_shared<DepthAnythingInferenceNCNN>("v2_s", MODEL_WH, true, true);
-            depthInfer_mnn = make_shared<DepthAnythingInferenceMNN>("v2_s" + std::to_string(MODEL_WH), MODEL_WH, false, m_use_kalman, true);
+            depthInfer_mnn = make_shared<DepthAnythingInferenceMNN>("v2_s" + std::to_string(MODEL_WH), false, m_use_kalman, true);
             kalmanFilter = std::make_shared<KalmanFilter>(MODEL_WH, 1e-5, 5e-4, 0.02);
             // faceDetection = std::make_shared<FaceDetection>(MODEL_PATH "/libfacedetection/face_detection_yunet_2023mar.onnx");
-            ultraface = std::make_shared<UltraFace>(MODEL_PATH "/libfacedetection/RFB-320-quantINT8.mnn", 320, 240, std::thread::hardware_concurrency(), 0.65, 0.3, -1, false);
+            ultraface = std::make_shared<UltraFace>(MODEL_PATH "/libfacedetection/RFB-320-quantINT8.mnn", std::max(1u, std::thread::hardware_concurrency()), 0.65, 0.3, -1, false);
             selectedApp = std::make_unique<MyBokeh>();
             // ------------------ video path ----------------------
-            const char* video_path = ASSERT_DIR "/video/12.mp4";
+            const char* video_path = ASSERT_DIR "/video/11.mp4";
             std::string ini_video_path = ini->getValue("video_path");
             if (!ini_video_path.empty()) {
                 video_path = ini_video_path.c_str();
@@ -198,13 +199,16 @@ namespace CS
                 selectedApp->run();
 
                 // BUG:保存视频
-                cv::Mat renderedImage;
                 std::string save_video = ini->getValue("save_video");
                 int _save_video = std::stoi(save_video);
                 if (_save_video > 0)
                 {
-                    selectedApp->readRenderResult(renderedImage);
-                    videoWriter.write(renderedImage);
+                    int w, h;
+                    std::unique_ptr<uint8_t[]> renderedImage;
+                    selectedApp->readRenderResult(renderedImage, w, h);
+                    cv::Mat mat(h, w, CV_8UC3, renderedImage.get());
+                    cv::flip(mat, mat, 0);
+                    videoWriter.write(mat);
                 }
                 
                 // 保存图片
@@ -217,8 +221,12 @@ namespace CS
                     const char* saveImgDir = ASSERT_DIR "/video/frames";
                     filename << saveImgDir << "/" << std::setw(6) << std::setfill('0') << i++ << ".png";
                     checkAndCreateDirectory(std::string(saveImgDir));
-                    selectedApp->readRenderResult(renderedImage);
-                    cv::imwrite(filename.str(), renderedImage);
+                    int w, h;
+                    std::unique_ptr<uint8_t[]> renderedImage;
+                    selectedApp->readRenderResult(renderedImage, w, h);
+                    cv::Mat mat(h, w, CV_8UC3, renderedImage.get());
+                    cv::flip(mat, mat, 0);
+                    cv::imwrite(filename.str(), mat);
                 }
 
                 // 计时
@@ -236,10 +244,123 @@ namespace CS
 }
 
 
+int getCLInfo();
+int testOpenCL(void);
+
 int main(int argc, char** argv)
 {
     CS::MyApplication app;
     app.run();
+    
+    //getCLInfo();
+    //testOpenCL();
+   
+    return 0;
+}
 
+
+int getCLInfo(void)
+{
+    cl_platform_id* platform;
+    cl_uint num_platform;
+    cl_int err;
+    err = clGetPlatformIDs(0, NULL, &num_platform);
+    platform = (cl_platform_id*)malloc(sizeof(cl_platform_id) * num_platform);
+    err = clGetPlatformIDs(num_platform, platform, NULL);
+    for (int i = 0; i < num_platform; i++)
+    {
+        printf("\nPlatform %d information\n", i);
+        size_t size;
+        err = clGetPlatformInfo(platform[i], CL_PLATFORM_NAME, 0, NULL, &size);
+        char* PName = (char*)malloc(size);
+        err = clGetPlatformInfo(platform[i], CL_PLATFORM_NAME, size, PName, NULL);
+        printf("CL_PLATFORM_NAME: %s\n", PName);
+        err = clGetPlatformInfo(platform[i], CL_PLATFORM_VENDOR, 0, NULL, &size);
+        char* PVendor = (char*)malloc(size);
+        err = clGetPlatformInfo(platform[i], CL_PLATFORM_VENDOR, size, PVendor, NULL);
+        printf("CL_PLATFORM_VENDOR: %s\n", PVendor);
+        err = clGetPlatformInfo(platform[i], CL_PLATFORM_VERSION, 0, NULL, &size);
+        char* PVersion = (char*)malloc(size);
+        err = clGetPlatformInfo(platform[i], CL_PLATFORM_VERSION, size, PVersion, NULL);
+        printf("CL_PLATFORM_VERSION: %s\n", PVersion);
+        err = clGetPlatformInfo(platform[i], CL_PLATFORM_PROFILE, 0, NULL, &size);
+        char* PProfile = (char*)malloc(size);
+        err = clGetPlatformInfo(platform[i], CL_PLATFORM_PROFILE, size, PProfile, NULL);
+        printf("CL_PLATFORM_PROFILE: %s\n", PProfile);
+        err = clGetPlatformInfo(platform[i], CL_PLATFORM_EXTENSIONS, 0, NULL, &size);
+        char* PExten = (char*)malloc(size);
+        err = clGetPlatformInfo(platform[i], CL_PLATFORM_EXTENSIONS, size, PExten, NULL);
+        printf("CL_PLATFORM_EXTENSIONS: %s\n", PExten);
+        free(PName);
+        free(PVendor);
+        free(PVersion);
+        free(PProfile);
+        free(PExten);
+    }
+    return 0;
+}
+
+int testOpenCL(void)
+{
+    const int N = 1024; // *矩阵大小*
+    const size_t size = N * N * sizeof(float);
+    float* A = new float[N * N];
+    float* B = new float[N * N];
+    for (int i = 0; i < N * N; i++) {
+        A[i] = 1.0f;
+        B[i] = 2.0f;
+    }
+    cl_context context = 0;
+    cl_command_queue commandQueue = 0;
+    cl_program program = 0;
+    cl_device_id device = 0;
+    cl_kernel kernel = 0;
+    cl_mem memObjects[3] = {0, 0, 0};
+    cl_int errNum;
+    // *初始化OpenCL环境*
+    cl_platform_id platform;
+    clGetPlatformIDs(1, &platform, NULL);
+    clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
+    context = clCreateContext(NULL, 1, &device, NULL, NULL, NULL);
+    commandQueue = clCreateCommandQueueWithProperties(context, device, 0, NULL);
+
+    // *创建OpenCL内存缓冲区*
+    cl_mem bufferA = clCreateBuffer(context, CL_MEM_READ_ONLY, size, NULL, NULL);
+    cl_mem bufferB = clCreateBuffer(context, CL_MEM_READ_ONLY, size, NULL, NULL);
+    cl_mem bufferC = clCreateBuffer(context, CL_MEM_WRITE_ONLY, size, NULL, NULL);
+
+    // *将输入数据传输到OpenCL缓冲区*
+    clEnqueueWriteBuffer(commandQueue, bufferA, CL_TRUE, 0, size, A, 0, NULL, NULL);
+    clEnqueueWriteBuffer(commandQueue, bufferB, CL_TRUE, 0, size, B, 0, NULL, NULL);
+
+    // *创建OpenCL程序对象*
+    const char* source = "__kernel void add_matrices(__global const float* A, __global const float* B, __global float* C) { int id = get_global_id(0); C[id] = A[id] + B[id]; }";
+    program = clCreateProgramWithSource(context, 1, &source, NULL, NULL);
+    clBuildProgram(program, 1, &device, NULL, NULL, NULL);
+    kernel = clCreateKernel(program, "add_matrices", NULL);
+
+    // *设置OpenCL内核参数*
+    clSetKernelArg(kernel, 0, sizeof(cl_mem), &bufferA);
+    clSetKernelArg(kernel, 1, sizeof(cl_mem), &bufferB);
+    clSetKernelArg(kernel, 2, sizeof(cl_mem), &bufferC);
+
+    // *启动内核*
+    size_t globalWorkSize[2] = {N, N};
+    clEnqueueNDRangeKernel(commandQueue, kernel, 2, NULL, globalWorkSize, NULL, 0, NULL, NULL);
+
+    // *读取结果数据*
+    clEnqueueReadBuffer(commandQueue, bufferC, CL_TRUE, 0, size, A, 0, NULL, NULL);
+
+    // *清理OpenCL资源*
+    clReleaseMemObject(bufferA);
+    clReleaseMemObject(bufferB);
+    clReleaseMemObject(bufferC);
+    clReleaseProgram(program);
+    clReleaseKernel(kernel);
+    clReleaseCommandQueue(commandQueue);
+    clReleaseContext(context);
+
+    // *打印结果*
+    std::cout << "Result: " << A[0] << std::endl;
     return 0;
 }

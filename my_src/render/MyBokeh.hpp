@@ -33,7 +33,7 @@ namespace CS
         MyBokeh();
         ~MyBokeh() = default;
         void setFocusDis(float dis);
-        void readRenderResult(cv::Mat& frame);
+        void readRenderResult(std::unique_ptr<uint8_t[]>& frame, int& w, int& h);
 
     protected:
         std::string title = "Bokeh";

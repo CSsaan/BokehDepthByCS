@@ -1,4 +1,4 @@
-﻿#include "BlazeFace.h"
+#include "BlazeFace.h"
 
 using namespace std;
 using namespace MNN;
@@ -8,12 +8,19 @@ using namespace MNN::Express;
 
 namespace CS
 {
-    UltraFace::UltraFace(const std::string& mnn_path, int input_width, int input_length, int num_thread_, float score_threshold_, float iou_threshold_, int topk_, bool use_gpu) {
+    UltraFace::UltraFace(const std::string& mnn_path, int num_thread_, float score_threshold_, float iou_threshold_, int topk_, bool use_gpu) {
+        
+        if (!load(mnn_path, use_gpu, m_inputSize))
+        {
+            std::cerr << "[UltraFace] Failed to load model." << std::endl;
+            return ;
+        }
+        
         num_thread = num_thread_;
         score_threshold = score_threshold_;
         iou_threshold = iou_threshold_;
-        in_w = input_width;
-        in_h = input_length;
+        in_w = m_inputSize[2];
+        in_h = m_inputSize[3];
         w_h_list = { in_w, in_h };
 
         for (auto size : w_h_list) {
@@ -45,19 +52,28 @@ namespace CS
             }
         }
         /* generate prior anchors finished */
-
         num_anchors = priors.size();
 
+        pretreat.reset(MNN::CV::ImageProcess::create(MNN::CV::BGR, MNN::CV::RGB, mean_vals, 3, norm_vals, 3), MNN::CV::ImageProcess::destroy);
+    }
+
+    UltraFace::~UltraFace() {
+        ultraface_interpreter->releaseModel();
+        ultraface_interpreter->releaseSession(ultraface_session);
+    }
+
+    bool UltraFace::load(const std::string& mnn_path, bool use_gpu, std::vector<int>& in_shape)
+    {
         ultraface_interpreter = std::shared_ptr<MNN::Interpreter>(MNN::Interpreter::createFromFile(mnn_path.c_str()));
+        if (!ultraface_interpreter)
+        {
+            std::cerr << "Failed to create interpreter from model file." << std::endl;
+            return -1;
+        }
         MNN::ScheduleConfig config;
-        config.numThread = num_thread;
-        if (use_gpu) {
-            std::cout << "UltraFace use: GPU" << std::endl;
-            config.type = static_cast<MNNForwardType>(MNN_FORWARD_OPENCL);
-        }
-        else {
-            std::cout << "UltraFace use: CPU" << std::endl;
-        }
+        config.numThread = std::max(1u, std::thread::hardware_concurrency()); // 设置线程数
+        config.type = use_gpu ? MNN_FORWARD_OPENCL : MNN_FORWARD_CPU;
+        std::cout << "[UltraFace] use: " << (use_gpu ? "GPU" : "CPU") << std::endl;
 
         MNN::BackendConfig backendConfig;
         backendConfig.precision = MNN::BackendConfig::PrecisionMode::Precision_Normal;
@@ -67,13 +83,22 @@ namespace CS
 
         ultraface_session = ultraface_interpreter->createSession(config);
         input_tensor = ultraface_interpreter->getSessionInput(ultraface_session, nullptr);
-
-        pretreat.reset(MNN::CV::ImageProcess::create(MNN::CV::BGR, MNN::CV::RGB, mean_vals, 3, norm_vals, 3));
-    }
-
-    UltraFace::~UltraFace() {
-        ultraface_interpreter->releaseModel();
-        ultraface_interpreter->releaseSession(ultraface_session);
+        // print info
+        float memoryUsage = 0.0f;
+        float flops = 0.0f;
+        int backendType[2];
+        ultraface_interpreter->getSessionInfo(ultraface_session, MNN::Interpreter::MEMORY, &memoryUsage);
+        ultraface_interpreter->getSessionInfo(ultraface_session, MNN::Interpreter::FLOPS, &flops);
+        ultraface_interpreter->getSessionInfo(ultraface_session, MNN::Interpreter::BACKENDS, backendType);
+        printf("[UltraFace] Session Info: memory use %f MB, flops is %f M, backendType is %d \n", memoryUsage, flops, backendType[0]);
+        m_inputSize = input_tensor->shape();
+        std::cout << "[UltraFace] m_inputSize: [";
+        for (int dim : m_inputSize)
+        {
+            std::cout << dim << ", ";
+        }
+        std::cout << "]" << std::endl;
+        return input_tensor ? true : false;
     }
 
     cv::Rect_<float> UltraFace::detectLargest(cv::Mat& raw_image)
@@ -110,13 +135,19 @@ namespace CS
 
         image_h = raw_image.rows;
         image_w = raw_image.cols;
-        cv::Mat image;
-        cv::resize(raw_image, image, cv::Size(in_w, in_h));
 
-        ultraface_interpreter->resizeTensor(input_tensor, { 1, 3, in_h, in_w });
+        ultraface_interpreter->resizeTensor(input_tensor, {1, 3, in_h, in_w});
         ultraface_interpreter->resizeSession(ultraface_session);
-        
-        pretreat->convert(image.data, in_w, in_h, image.step[0], input_tensor);
+
+        // Padding and Resize
+        cv::Mat image;
+        // cv::resize(raw_image, image, cv::Size(in_w, in_h)); // abandoned
+        //TODO: MNN resize 的 pretreat
+        MNN::CV::Matrix trans;
+        trans.setScale((float)(raw_image.cols - 1) / (in_w - 1), (float)(raw_image.rows - 1) / (in_h - 1));
+        pretreat->setMatrix(trans);
+        pretreat->convert(raw_image.data, raw_image.cols, raw_image.rows, 0, input_tensor);
+        //pretreat->convert(image.data, in_w, in_h, image.step[0], input_tensor);
 
         auto start = std::chrono::high_resolution_clock::now();
 

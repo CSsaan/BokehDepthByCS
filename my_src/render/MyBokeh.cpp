@@ -1,4 +1,4 @@
-﻿#include "MyBokeh.hpp"
+#include "MyBokeh.hpp"
 /**
  * MyBokeh.cpp
  * Contributors:
@@ -10,6 +10,7 @@
 
 #include <iostream>
 #include <vector>
+#include <memory>
 
 namespace CS
 {
@@ -182,13 +183,14 @@ namespace CS
         focus_dis = dis;
     }
 
-    void MyBokeh::readRenderResult(cv::Mat& frame)
+    void MyBokeh::readRenderResult(std::unique_ptr<uint8_t[]>& frame, int& w, int& h)
     {
-        int w = getWidth();
-        int h = getHeight();
-        frame.create(h, w, CV_8UC3); // 假设使用 RGB 格式
-        glReadPixels(0, 0, w, h, GL_BGR, GL_UNSIGNED_BYTE, frame.data);
-        cv::flip(frame, frame, 0); // 垂直翻转以匹配 OpenCV 的坐标系 // OpenCV Mat 的数据是从左下角开始的，而 OpenGL 的坐标系是从左上角开始的
+        w = getWidth();
+        h = getHeight();
+        frame = std::make_unique<uint8_t[]>(w * h * 3);
+        // frame.create(h, w, CV_8UC3); // 假设使用 RGB 格式
+        glReadPixels(0, 0, w, h, GL_BGR, GL_UNSIGNED_BYTE, frame.get());
+        // cv::flip(frame, frame, 0); // 垂直翻转以匹配 OpenCV 的坐标系 // OpenCV Mat 的数据是从左下角开始的，而 OpenGL 的坐标系是从左上角开始的
     }
 
     void MyBokeh::processInput(GLFWwindow* window) {

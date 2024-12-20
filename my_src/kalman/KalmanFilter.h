@@ -8,14 +8,15 @@ namespace CS
 {
     class KalmanFilter {
     public:
-        KalmanFilter(int rows_cols, double kal_q = 1e-5, double kal_r = 5e-4, double movement = 0.02);
+        KalmanFilter(int rows, int cols, double kal_q = 1e-5, double kal_r = 5e-4, double movement = 0.02);
         void processMaskArray(const float* mask_array, float* skin_mask_result);
         // KalmanFilter_s
         Eigen::VectorXd update_s(const Eigen::VectorXd& measurement);
 
     private:
         float movementLevel = 0.0f;
-        int m_rows_cols;
+        int m_rows;
+        int m_cols;
         double m_kal_q;    // 过程噪声协方差
         double m_kal_r;    // 观测噪声协方差
         double m_movement;

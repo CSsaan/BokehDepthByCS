@@ -5,12 +5,12 @@
 
 namespace CS
 {
-KalmanFilter::KalmanFilter(int rows_cols, double kal_q, double kal_r, double movement) :
-    m_rows_cols(rows_cols), m_kal_q(kal_q), m_kal_r(kal_r), m_movement(movement)
+KalmanFilter::KalmanFilter(int rows, int cols, double kal_q, double kal_r, double movement)
+    : m_rows(rows), m_cols(cols), m_kal_q(kal_q), m_kal_r(kal_r), m_movement(movement)
 {
-    pred_mask = MatrixXf::Zero(m_rows_cols, m_rows_cols);
-    p_mask = MatrixXf::Ones(m_rows_cols, m_rows_cols);
-    //skin_mask_result = std::make_unique<float[]>(m_rows_cols * m_rows_cols);
+    pred_mask = MatrixXf::Zero(m_rows, m_cols);
+    p_mask = MatrixXf::Ones(m_rows, m_cols);
+    //skin_mask_result = std::make_unique<float[]>(m_rows * m_cols);
 
     set_param_s(0.00003, 0.5);
 }
@@ -38,8 +38,8 @@ void KalmanFilter::kalman_filter_single_frame(const MatrixXf& currentMask, const
 }
 
 void KalmanFilter::processMaskArray(const float* mask_array, float* skin_mask_result) {
-    // Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> current_mask(mask_array, m_rows_cols, m_rows_cols);
-    Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> current_mask(mask_array, m_rows_cols, m_rows_cols);
+    // Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> current_mask(mask_array, m_rows, m_cols);
+    Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> current_mask(mask_array, m_rows, m_cols);
     Eigen::MatrixXf cur_mask = current_mask.cast<float>();
     kalman_filter_single_frame(cur_mask, previous_mask, pred_mask, p_mask, m_kal_q, m_kal_r, m_movement);
     previous_mask = cur_mask;

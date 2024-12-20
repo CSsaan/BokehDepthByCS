@@ -9,17 +9,22 @@ using namespace MNN::Express;
 
 namespace CS
 {
-    DepthAnythingInferenceMNN::DepthAnythingInferenceMNN(const std::string& modeltype, uint32_t inputSize, bool restore_size, bool use_kalman, bool use_gpu) :
-        m_inputSize(inputSize), m_restore_size(restore_size), m_use_kalman(use_kalman)
+    DepthAnythingInferenceMNN::DepthAnythingInferenceMNN(const std::string& modeltype, bool restore_size, bool use_kalman, bool use_gpu) :
+        m_restore_size(restore_size), m_use_kalman(use_kalman)
     {
-        if (m_use_kalman)
+        if(load(modeltype, use_gpu, m_inputSize))
         {
-            kalmanFilter = std::make_shared<KalmanFilter>(inputSize, 1e-5, 5e-4, 0.02);
+            uint16_t w_size = m_inputSize[2];
+            uint16_t h_size = m_inputSize[3];
+            if (m_use_kalman)
+            {
+                std::cout << "[DepthAnythingInferenceMNN] [ USE Kalman ]" << std::endl;
+                kalmanFilter = std::make_shared<KalmanFilter>(w_size, h_size, 1e-5, 5e-4, 0.02);
+            }
+            skin_mask_result = std::make_unique<float[]>(w_size * h_size);
         }
-        skin_mask_result = std::make_unique<float[]>(inputSize * inputSize);
-        pretreat.reset(MNN::CV::ImageProcess::create(MNN::CV::BGR, MNN::CV::RGB, mean_vals.data(), 3, norm_vals.data(), 3));
 
-        load(modeltype, use_gpu);
+        pretreat.reset(MNN::CV::ImageProcess::create(MNN::CV::BGR, MNN::CV::RGB, mean_vals.data(), 3, norm_vals.data(), 3), MNN::CV::ImageProcess::destroy);
     }
 
     DepthAnythingInferenceMNN::~DepthAnythingInferenceMNN() {
@@ -29,7 +34,7 @@ namespace CS
         }
     }
 
-    int DepthAnythingInferenceMNN::load(const std::string& modeltype, bool use_gpu)
+    bool DepthAnythingInferenceMNN::load(const std::string& modeltype, bool use_gpu, std::vector<int> &in_shape)
     {
         std::string modelPath = std::string(MODEL_PATH) + "/dpt/dpt" + modeltype + ".mnn";
         net = std::shared_ptr<MNN::Interpreter>(MNN::Interpreter::createFromFile(modelPath.c_str()));
@@ -39,19 +44,36 @@ namespace CS
         }
 
         MNN::ScheduleConfig config;
-        config.numThread = std::max(1u, std::thread::hardware_concurrency()); // ÉèÖÃÏß³ÌÊý
+        config.numThread = std::max(1u, std::thread::hardware_concurrency()); // è®¾ç½®çº¿ç¨‹æ•°
         config.type = use_gpu ? MNN_FORWARD_OPENCL : MNN_FORWARD_CPU;
-        std::cout << "DepthAnythingInferenceMNN use: " << (use_gpu ? "GPU" : "CPU") << std::endl;
+        std::cout << "[DepthAnythingInferenceMNN] use: " << (use_gpu ? "GPU" : "CPU") << std::endl;
 
-        MNN::BackendConfig backendConfig;
-        backendConfig.precision = MNN::BackendConfig::PrecisionMode::Precision_Normal;
-        backendConfig.power = MNN::BackendConfig::PowerMode::Power_Normal;
-        backendConfig.memory = MNN::BackendConfig::MemoryMode::Memory_Normal;
-        config.backendConfig = &backendConfig;
+        //MNN::BackendConfig backendConfig;
+        //backendConfig.precision = MNN::BackendConfig::PrecisionMode::Precision_Normal;
+        //backendConfig.power = MNN::BackendConfig::PowerMode::Power_Normal;
+        //backendConfig.memory = MNN::BackendConfig::MemoryMode::Memory_Normal;
+        //config.backendConfig = &backendConfig;
 
         session = net->createSession(config);
         input_tensor = net->getSessionInput(session, nullptr);
-        return input_tensor ? 0 : -1;
+
+        // print info
+        float memoryUsage = 0.0f;
+        net->getSessionInfo(session, MNN::Interpreter::MEMORY, &memoryUsage);
+        float flops = 0.0f;
+        net->getSessionInfo(session, MNN::Interpreter::FLOPS, &flops);
+        int backendType[2];
+        net->getSessionInfo(session, MNN::Interpreter::BACKENDS, backendType);
+        printf("[DepthAnythingInferenceMNN] Session Info: memory use %f MB, flops is %f M, backendType is %d \n", memoryUsage, flops, backendType[0]);
+
+        in_shape = input_tensor->shape();
+        std::cout << "[DepthAnythingInferenceMNN] m_inputSize: [";
+        for (int dim : in_shape)
+        {
+            std::cout << dim << ", ";
+        }
+        std::cout << "]" << std::endl;
+        return input_tensor ? true : false;
     }
 
     void DepthAnythingInferenceMNN::resizeAndPadImage(const cv::Mat& image, cv::Mat& output, uint16_t targetSize, ImagePaddingInfo& paddingInfo) {
@@ -79,25 +101,31 @@ namespace CS
             return -1;
         }
 
-        cv::Mat image;
-        ImagePaddingInfo paddingInfo;
-        if (use_pad) {
-            resizeAndPadImage(raw_image, image, m_inputSize, paddingInfo);
-        }
-        else {
-            cv::resize(raw_image, image, cv::Size(m_inputSize, m_inputSize));
-        }
-
         if (!net || !session || !input_tensor) {
             std::cerr << "Net, session, or input_tensor is null" << std::endl;
             return -1;
         }
-        net->resizeTensor(input_tensor, { 1, 3, m_inputSize, m_inputSize });
+        net->resizeTensor(input_tensor, m_inputSize);
         net->resizeSession(session);
 
-        pretreat->convert(image.data, m_inputSize, m_inputSize, image.step[0], input_tensor);
+        // Padding and Resize
+        ImagePaddingInfo paddingInfo;
+        if (use_pad) {
+            cv::Mat image;
+            resizeAndPadImage(raw_image, image, m_inputSize[2], paddingInfo);
+            // åŽŸå§‹ä½¿ç”¨opencv resizeçš„pretreat
+            pretreat->convert(image.data, m_inputSize[2], m_inputSize[3], image.step[0], input_tensor);
+        }
+        else {
+            //cv::resize(raw_image, image, cv::Size(m_inputSize[2], m_inputSize[3])); // abandoned
+            //TODO: MNN resize çš„ pretreat
+            MNN::CV::Matrix trans;
+            trans.setScale((float)(raw_image.cols - 1) / (m_inputSize[2] - 1), (float)(raw_image.rows - 1) / (m_inputSize[3] - 1));
+            pretreat->setMatrix(trans);
+            pretreat->convert(raw_image.data, raw_image.cols, raw_image.rows, 0, input_tensor);
+        }
 
-        // ÍÆÀí
+        // æŽ¨ç†
         auto start = std::chrono::high_resolution_clock::now();
         net->runSession(session);
         MNN::Tensor* tensor_depth = net->getSessionOutput(session, "depth");
@@ -105,31 +133,31 @@ namespace CS
             std::cerr << "tensor_depth is null" << std::endl;
             return -1;
         }
-        // ¶ÁÈ¡Ä£ÐÍÊä³ö
+        // è¯»å–æ¨¡åž‹è¾“å‡º
         MNN::Tensor tensor_depth_host(tensor_depth, tensor_depth->getDimensionType());
         auto flag1 = tensor_depth->copyToHostTensor(&tensor_depth_host);
         float* tensor_data = nullptr;
         if (flag1) {
-            tensor_data = tensor_depth_host.host<float>(); // Èç¹û tensor_scores ÔÚ GPU ÉÏ£¬Ê¹ÓÃ tensor_scores_host
+            tensor_data = tensor_depth_host.host<float>(); // å¦‚æžœ tensor_scores åœ¨ GPU ä¸Šï¼Œä½¿ç”¨ tensor_scores_host
         }
         else {
-            tensor_data = tensor_depth->host<float>(); // Èç¹û tensor_scores ÔÚ CPU ÉÏ£¬Ê¹ÓÃ tensor_scores
+            tensor_data = tensor_depth->host<float>(); // å¦‚æžœ tensor_scores åœ¨ CPU ä¸Šï¼Œä½¿ç”¨ tensor_scores
         }
-        // ¿¨¶ûÂüÂË²¨ & ·´¹éÒ»»¯ 0.2ms
+        // å¡å°”æ›¼æ»¤æ³¢ & åå½’ä¸€åŒ– 0.2ms
         if (m_use_kalman) {
             kalmanFilter->processMaskArray(static_cast<const float*>(tensor_data), skin_mask_result.get());
-            cv::Mat cv_pha(m_inputSize, m_inputSize, CV_32FC1, skin_mask_result.get());
+            cv::Mat cv_pha(m_inputSize[2], m_inputSize[3], CV_32FC1, skin_mask_result.get());
             cv::normalize(cv_pha, depth, 0, 255, cv::NORM_MINMAX, CV_8UC1);
         }
         else {
-            cv::Mat cv_pha(m_inputSize, m_inputSize, CV_32FC1, static_cast<float*>(tensor_data));
+            cv::Mat cv_pha(m_inputSize[2], m_inputSize[3], CV_32FC1, static_cast<float*>(tensor_data));
             cv::normalize(cv_pha, depth, 0, 255, cv::NORM_MINMAX, CV_8UC1);
         }
-        // Î±²ÊÉ«ÏÔÊ¾
+        // ä¼ªå½©è‰²æ˜¾ç¤º
         if (use_color_map) {
             cv::applyColorMap(depth, depth, cv::COLORMAP_INFERNO);
         }
-        // È¥³ý padding
+        // åŽ»é™¤ padding
         if (use_pad) {
             depth = depth(cv::Rect(paddingInfo.widthPad / 2, paddingInfo.heightPad / 2, paddingInfo.width, paddingInfo.height));
         }
@@ -145,7 +173,7 @@ namespace CS
 
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> duration = end - start;
-        std::cout << "DepthAnythingInferenceMNN inference time: " << duration.count() << " ms" << std::endl;
+        std::cout << "[DepthAnythingInferenceMNN] inference time: " << duration.count() << " ms" << std::endl;
 
         return 0;
     }

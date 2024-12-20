@@ -9,41 +9,41 @@
 #include <MNN/expr/Executor.hpp>
 #include <cv/cv.hpp>
 
-#include "KalmanFilter.h" // ¼ÙÉè KalmanFilter ÀàÔÚÕâ¸öÍ·ÎÄ¼şÖĞ¶¨Òå
+#include "KalmanFilter.h" // å‡è®¾ KalmanFilter ç±»åœ¨è¿™ä¸ªå¤´æ–‡ä»¶ä¸­å®šä¹‰
 
 namespace CS {
     struct ImagePaddingInfo {
-        uint16_t width;   // Ëõ·ÅºóµÄ¿í¶È
-        uint16_t height;  // Ëõ·ÅºóµÄ¸ß¶È
-        uint16_t widthPad; // Ìî³ä¿í¶È
-        uint16_t heightPad; // Ìî³ä¸ß¶È
+        uint16_t width;   // ç¼©æ”¾åçš„å®½åº¦
+        uint16_t height;  // ç¼©æ”¾åçš„é«˜åº¦
+        uint16_t widthPad; // å¡«å……å®½åº¦
+        uint16_t heightPad; // å¡«å……é«˜åº¦
     };
 
     class DepthAnythingInferenceMNN {
     public:
-        // ¹¹Ôìº¯Êı
-        DepthAnythingInferenceMNN(const std::string& modeltype, uint32_t inputSize, bool restore_size, bool use_kalman=false, bool use_gpu=true);
+        // æ„é€ å‡½æ•°
+        DepthAnythingInferenceMNN(const std::string& modeltype, bool restore_size, bool use_kalman=false, bool use_gpu=true);
         ~DepthAnythingInferenceMNN();
-        // ÍÆÀíº¯Êı
+        // æ¨ç†å‡½æ•°
         int infer(const cv::Mat& image, cv::Mat& depth, bool use_color_map, const std::string& output_path = "");
 
     private:
         std::shared_ptr<MNN::CV::ImageProcess> pretreat;
-        bool use_pad = false;  // Ç°ºó´¦Àí µÈ±ÈÀıËõ·Å
-        bool m_use_kalman;    // ÊÇ·ñÊ¹ÓÃ¿¨¶ûÂüÂË²¨
-        uint16_t m_inputSize; // ¸ß¶ÈºÍ¿í¶È
-        bool m_restore_size;  // ÊÇ·ñ»Ö¸´Ô­Ê¼´óĞ¡
+        bool use_pad = false;  // å‰åå¤„ç† ç­‰æ¯”ä¾‹ç¼©æ”¾
+        bool m_use_kalman;    // æ˜¯å¦ä½¿ç”¨å¡å°”æ›¼æ»¤æ³¢
+        bool m_restore_size;  // æ˜¯å¦æ¢å¤åŸå§‹å¤§å°
         MNN::Tensor* input_tensor = nullptr;
-        std::shared_ptr<MNN::Interpreter> net; // MNN ½âÊÍÆ÷
-        MNN::Session* session; // MNN »á»°
-        std::shared_ptr<KalmanFilter> kalmanFilter; // ¿¨¶ûÂüÂË²¨Æ÷
-        std::unique_ptr<float[]> skin_mask_result;  // Æ¤·ôÑÚÄ¤½á¹û
+        std::vector<int> m_inputSize; // è·å–æ¨¡å‹è¾“å…¥å°ºå¯¸
+        std::shared_ptr<MNN::Interpreter> net; // MNN è§£é‡Šå™¨
+        MNN::Session* session; // MNN ä¼šè¯
+        std::shared_ptr<KalmanFilter> kalmanFilter; // å¡å°”æ›¼æ»¤æ³¢å™¨
+        std::unique_ptr<float[]> skin_mask_result;  // çš®è‚¤æ©è†œç»“æœ
 
-        // ¹éÒ»»¯²ÎÊı
-        const std::array<float, 3> mean_vals = { 0.485f, 0.456f, 0.406f }; // ¾ùÖµ
-        const std::array<float, 3> norm_vals = { 0.01712475f, 0.0175f, 0.01742919f }; // ±ê×¼²î
+        // å½’ä¸€åŒ–å‚æ•°
+        const std::array<float, 3> mean_vals = { 0.485f, 0.456f, 0.406f }; // å‡å€¼
+        const std::array<float, 3> norm_vals = { 0.01712475f, 0.0175f, 0.01742919f }; // æ ‡å‡†å·®
         
-        int load(const std::string& modeltype, bool use_gpu); // ¼ÓÔØÄ£ĞÍ
+        bool load(const std::string& modeltype, bool use_gpu, std::vector<int>& in_shape); // åŠ è½½æ¨¡å‹
         void resizeAndPadImage(const cv::Mat& image, cv::Mat& output, uint16_t targetSize, ImagePaddingInfo& paddingInfo);
     };
 
